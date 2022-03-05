@@ -1,0 +1,17 @@
+[package]
+name = "craft-forest"
+version = "0.1.0"
+edition = "2021"
+description = "Tree and other data structures"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+keywords = ["tree", "trees"]
+categories = ["data-structures"]
+repository = "https://github.com/CraftSpider/forest"
+
+[dependencies]
+slotmap = "1.0"
+
+[features]
+unstable = []
+std = []
