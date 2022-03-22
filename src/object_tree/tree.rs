@@ -7,7 +7,6 @@ use core::ptr::NonNull;
 use core::cell::RefCell;
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
-use std::cell::Ref;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
 
 new_key_type! {
@@ -175,8 +174,8 @@ impl<T: ?Sized> Tree<T> {
             .borrow()
             .children
             .get(parent)
-            .unwrap_or(&Vec::new())
-            .clone()
+            .cloned()
+            .unwrap_or_default()
             .into_iter()
     }
 }
