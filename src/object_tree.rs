@@ -21,6 +21,7 @@ pub use tree::{Tree, TreeKey};
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
     use super::*;
     use super::error::Result;
 

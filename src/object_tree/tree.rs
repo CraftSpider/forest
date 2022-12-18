@@ -7,7 +7,11 @@ use core::ptr::NonNull;
 use core::cell::RefCell;
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
+use typed_arena::Arena;
+use crate::stable_map::StableMap;
 
 new_key_type! {
     /// Key for a node in a tree. Altering the tree will not invalidate the key, as long
@@ -19,11 +23,11 @@ new_key_type! {
 /// multiple nodes at once. Supports access via slot keys, or by traversing immutable or mutable
 /// node references.
 #[derive(Clone)]
-pub struct Tree<T: ?Sized> {
+pub struct Tree<T: /* ?Sized */> {
     inner: RefCell<InnerTree<T>>,
 }
 
-impl<T: ?Sized> Tree<T> {
+impl<T: /* ?Sized */> Tree<T> {
     /// Create a new tree
     #[must_use]
     pub fn new() -> Tree<T> {
@@ -70,6 +74,13 @@ impl<T: ?Sized> Tree<T> {
     /// Remove the second node as a child of the first node
     pub fn remove_child(&self, parent: TreeKey, child: TreeKey) {
         self.inner.borrow_mut().remove_child(parent, child);
+    }
+
+    /// Remove a node from the tree, removing all children as well. Fails if the node or any
+    /// of its children are currently borrowed.
+    pub fn remove_node_recursive(&self, node: TreeKey) -> Result<()> {
+        self.inner.borrow_mut()
+            .remove_node_recursive(node)
     }
 
     /// Try to get an immutable reference to a node identified by the provided key
@@ -200,7 +211,7 @@ impl<T> Tree<T> {
     }
 }
 
-fn recurse_tree<T: ?Sized + fmt::Debug>(
+fn recurse_tree<T: /* ?Sized + */ fmt::Debug>(
     f: &mut fmt::Formatter<'_>,
     indent: usize,
     node: Result<NodeRef<'_, '_, T>>,
@@ -217,7 +228,7 @@ fn recurse_tree<T: ?Sized + fmt::Debug>(
     Ok(())
 }
 
-impl<T: ?Sized + fmt::Debug> fmt::Debug for Tree<T> {
+impl<T: /* ?Sized + */ fmt::Debug> fmt::Debug for Tree<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for node in self.roots() {
             recurse_tree(f, 0, node)?;
@@ -226,7 +237,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Tree<T> {
     }
 }
 
-impl<T: ?Sized> Default for Tree<T> {
+impl<T: /* ?Sized */> Default for Tree<T> {
     fn default() -> Self {
         Tree {
             inner: RefCell::new(InnerTree::new()),
@@ -234,15 +245,20 @@ impl<T: ?Sized> Default for Tree<T> {
     }
 }
 
+struct Node<T> {
+    idx: u32,
+    item: T,
+}
+
 #[derive(Clone, Debug)]
-struct InnerTree<T: ?Sized> {
+struct InnerTree<T> {
     nodes: SlotMap<TreeKey, NonNull<RefCell<T>>>,
     parents: SecondaryMap<TreeKey, TreeKey>,
     children: SecondaryMap<TreeKey, Vec<TreeKey>>,
     roots: Vec<TreeKey>,
 }
 
-impl<T: ?Sized> InnerTree<T> {
+impl<T: /* ?Sized */> InnerTree<T> {
     fn new() -> InnerTree<T> {
         InnerTree {
             nodes: SlotMap::with_key(),
@@ -293,6 +309,11 @@ impl<T: ?Sized> InnerTree<T> {
         self.parents.remove(child);
         self.roots.push(child);
     }
+
+    fn remove_node_recursive(&mut self, node: TreeKey) -> Result<()> {
+        let node = unsafe { self.nodes[node].as_ref().try_borrow_mut()? };
+        todo!()
+    }
 }
 
 impl<T> InnerTree<T> {
@@ -314,7 +335,7 @@ impl<T> InnerTree<T> {
     }
 }
 
-impl<T: ?Sized> Drop for InnerTree<T> {
+impl<T: /* ?Sized */> Drop for InnerTree<T> {
     fn drop(&mut self) {
         for i in self.nodes.values() {
             unsafe {

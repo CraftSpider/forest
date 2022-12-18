@@ -1,10 +1,12 @@
 //! Handy data structures, particularly trees and occasionally graphs
 
-#![cfg_attr(feature = "unstable", feature(unsize))]
+#![cfg_attr(feature = "unstable", feature(unsize, coerce_unsized))]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![feature(never_type)]
 
 #![deny(clippy::all)]
 #![deny(
-    missing_docs,
+    // missing_docs,
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
     missing_abi,
@@ -18,9 +20,11 @@
     clippy::doc_markdown,
     clippy::ptr_as_ptr,
     clippy::cloned_instead_of_copied,
-    clippy::unreadable_literal
+    clippy::unreadable_literal,
+    clippy::missing_panics_doc
 )]
 
 extern crate alloc;
 
 pub mod object_tree;
+pub mod stable_map;

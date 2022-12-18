@@ -10,8 +10,16 @@ categories = ["data-structures"]
 repository = "https://github.com/CraftSpider/forest"
 
 [dependencies]
+typed-arena = "2.0"
 slotmap = "1.0"
+
+[dev-dependencies]
+criterion = "0.3"
 
 [features]
 unstable = []
 std = []
+
+[[bench]]
+name = "benchmarks"
+harness = false
