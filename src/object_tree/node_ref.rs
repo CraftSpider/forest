@@ -5,15 +5,15 @@ use super::error::Result;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::borrow::{Borrow, BorrowMut};
-use core::ptr::NonNull;
-use core::cell::{RefCell, Ref, RefMut};
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
 use alloc::vec::Vec;
+use crate::object_tree::Error;
+use crate::stable_cell::{StableCell, StableMut, StableRef};
 
 macro_rules! ref_common {
     ($ty:ty) => {
-        impl<'a, 'b, T: /* ?Sized */> $ty {
+        impl<'a, 'b, T: ?Sized> $ty {
             /// Get the key of this node
             #[must_use]
             pub fn key(&self) -> TreeKey {
@@ -55,7 +55,7 @@ macro_rules! ref_common {
             }
         }
 
-        impl<'a, 'b, T: /* ?Sized */> Deref for $ty {
+        impl<'a, 'b, T: ?Sized> Deref for $ty {
             type Target = T;
 
             fn deref(&self) -> &Self::Target {
@@ -63,13 +63,13 @@ macro_rules! ref_common {
             }
         }
 
-        impl<'a, 'b, T: /* ?Sized */> AsRef<T> for $ty {
+        impl<'a, 'b, T: ?Sized> AsRef<T> for $ty {
             fn as_ref(&self) -> &T {
                 &*self.node
             }
         }
 
-        impl<'a, 'b, T: /* ?Sized */> Borrow<T> for $ty {
+        impl<'a, 'b, T: ?Sized> Borrow<T> for $ty {
             fn borrow(&self) -> &T {
                 &*self.node
             }
@@ -78,26 +78,26 @@ macro_rules! ref_common {
 }
 
 /// A reference to a node in a [`Tree`], with helpers to traverse nodes relative to this one
-pub struct NodeRef<'a, 'b, T: /* ?Sized */> {
+pub struct NodeRef<'a, 'b, T: ?Sized> {
     tree: &'a Tree<T>,
     mykey: TreeKey,
-    node: Ref<'b, T>,
+    node: StableRef<'b, T>,
 }
 
 ref_common! { NodeRef<'a, 'b, T> }
 
-impl<'a, 'b, T: /* ?Sized */> NodeRef<'a, 'b, T> {
+impl<'a, 'b, T: ?Sized> NodeRef<'a, 'b, T> {
     pub(super) fn try_borrow(
         tree: &'a Tree<T>,
         key: TreeKey,
-        ptr: &'_ NonNull<RefCell<T>>,
+        cell: &'_ StableCell<T>,
     ) -> Result<NodeRef<'a, 'b, T>> {
         // SAFETY: We only take immutable references to this data except when dropping
         //         Where we ensure no references live to any nodes
         Ok(NodeRef {
             tree,
             mykey: key,
-            node: unsafe { ptr.as_ref() }.try_borrow()?,
+            node: cell.try_borrow().ok_or(Error::CantBorrow)?,
         })
     }
 
@@ -126,26 +126,26 @@ impl<T: /* ?Sized + */ fmt::Debug> fmt::Debug for NodeRef<'_, '_, T> {
 
 /// A mutable reference to a node in a [`Tree`], with helpers to traverse nodes relative to this
 /// one as well as alter the node's relationships.
-pub struct NodeRefMut<'a, 'b, T: /* ?Sized */> {
+pub struct NodeRefMut<'a, 'b, T: ?Sized> {
     tree: &'a Tree<T>,
     mykey: TreeKey,
-    node: RefMut<'b, T>,
+    node: StableMut<'b, T>,
 }
 
 ref_common! { NodeRefMut<'a, 'b, T> }
 
-impl<'a, 'b, T: /* ?Sized */> NodeRefMut<'a, 'b, T> {
+impl<'a, 'b, T: ?Sized> NodeRefMut<'a, 'b, T> {
     pub(super) fn try_borrow(
         tree: &'a Tree<T>,
         key: TreeKey,
-        ptr: &'_ NonNull<RefCell<T>>,
+        cell: &'_ StableCell<T>,
     ) -> Result<NodeRefMut<'a, 'b, T>> {
         // SAFETY: We only take immutable references to this data except when dropping
         //         Where we ensure no references live to any nodes
         Ok(NodeRefMut {
             tree,
             mykey: key,
-            node: unsafe { ptr.as_ref() }.try_borrow_mut()?,
+            node: cell.try_borrow_mut().ok_or(Error::CantBorrow)?,
         })
     }
 
@@ -185,7 +185,7 @@ impl<T> NodeRefMut<'_, '_, T> {
     }
 }
 
-impl<T: /* ?Sized + */ fmt::Debug> fmt::Debug for NodeRefMut<'_, '_, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for NodeRefMut<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeRefMut")
             .field("mykey", &self.mykey)
@@ -194,19 +194,19 @@ impl<T: /* ?Sized + */ fmt::Debug> fmt::Debug for NodeRefMut<'_, '_, T> {
     }
 }
 
-impl<T: /* ?Sized */> DerefMut for NodeRefMut<'_, '_, T> {
+impl<T: ?Sized> DerefMut for NodeRefMut<'_, '_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.node
     }
 }
 
-impl<T: /* ?Sized */> AsMut<T> for NodeRefMut<'_, '_, T> {
+impl<T: ?Sized> AsMut<T> for NodeRefMut<'_, '_, T> {
     fn as_mut(&mut self) -> &mut T {
         &mut *self.node
     }
 }
 
-impl<T: /* ?Sized */> BorrowMut<T> for NodeRefMut<'_, '_, T> {
+impl<T: ?Sized> BorrowMut<T> for NodeRefMut<'_, '_, T> {
     fn borrow_mut(&mut self) -> &mut T {
         &mut *self.node
     }

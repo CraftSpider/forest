@@ -1,5 +1,6 @@
-use std::cell::{Cell, RefCell};
-use std::ptr::NonNull;
+use alloc::boxed::Box;
+use core::cell::{Cell, RefCell};
+use core::ptr::NonNull;
 use slotmap::{Key, SecondaryMap, SlotMap};
 use typed_arena::Arena;
 
