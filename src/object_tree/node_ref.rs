@@ -9,7 +9,7 @@ use core::borrow::{Borrow, BorrowMut};
 use core::marker::Unsize;
 use alloc::vec::Vec;
 use crate::object_tree::Error;
-use crate::stable_cell::{StableCell, StableMut, StableRef};
+use crate::stable::cell::{StableCell, StableMut, StableRef};
 
 macro_rules! ref_common {
     ($ty:ty) => {

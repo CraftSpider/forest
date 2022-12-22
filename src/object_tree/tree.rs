@@ -8,7 +8,7 @@ use core::cell::{Cell, RefCell};
 use core::marker::Unsize;
 use alloc::vec::Vec;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
-use crate::stable_cell::StableCell;
+use crate::stable::cell::StableCell;
 
 trait CellExt<T> {
     fn with<U>(&self, f: impl FnOnce(&mut T) -> U) -> U;
@@ -61,8 +61,7 @@ impl<T: ?Sized> Tree<T> {
     pub fn add_root_from<U: Unsize<T>>(&self, item: U) -> TreeKey {
         let mut nodes = self.nodes.borrow_mut();
 
-        // TODO: Add new_from to StableCell on unstable feature
-        let cell = StableCell::new_boxed(Box::new(item) as Box<T>);
+        let cell = StableCell::new_from(item);
 
         let new_key = nodes.insert(cell);
         
@@ -74,7 +73,7 @@ impl<T: ?Sized> Tree<T> {
     /// Create a new child of a node from a type that unsizes into the type of the tree
     #[cfg(feature = "unstable")]
     pub fn new_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) {
-        let cell = StableCell::new_boxed(Box::new(item) as Box<T>);
+        let cell = StableCell::new_from(item);
 
         let new_key = self.nodes
             .borrow_mut()

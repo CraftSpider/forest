@@ -1,37 +1,14 @@
 use alloc::boxed::Box;
 use core::cell::{Cell, UnsafeCell};
-use core::{mem, ptr};
 use core::marker::PhantomData;
-use core::num::NonZeroU64;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
-use alloc::alloc::Layout;
-use crate::util::{NonZeroExt, PtrRepr};
-
-const NONZERO_1: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(1) };
-
-#[derive(Debug, Copy, Clone)]
-enum DropState {
-    Mut,
-    Ref(NonZeroU64),
-}
-
-const _: () = assert!(mem::size_of::<DropState>() == mem::size_of::<u64>());
-
-#[derive(Debug, Copy, Clone)]
-enum BorrowState {
-    None,
-    Ref(NonZeroU64),
-    Mut,
-    Drop(DropState),
-}
-
-enum BorrowChange {
-    AddRef,
-    AddMut,
-    DeRef,
-    DeMut,
-}
+#[cfg(feature = "unstable")]
+use core::marker::Unsize;
+#[cfg(feature = "unstable")]
+use core::ops::CoerceUnsized;
+use crate::stable::util::{BorrowState, BorrowTy, NONZERO_1};
+use crate::util::NonZeroExt;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -41,48 +18,67 @@ struct CellState<T: ?Sized> {
 }
 
 impl<T: ?Sized> CellState<T> {
-    fn try_borrow(&self, change: BorrowChange) -> Option<BorrowState> {
+    fn try_add_ref(&self) -> Option<()> {
         let cur = self.borrow.get();
-        match (cur, change) {
-            (BorrowState::None, BorrowChange::AddRef) => {
-                self.borrow.set(BorrowState::Ref(NONZERO_1));
-                Some(cur)
+        match cur {
+            BorrowState::None => {
+                self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(NONZERO_1)));
+                Some(())
             }
-            (BorrowState::None, BorrowChange::AddMut) => {
-                self.borrow.set(BorrowState::Mut);
-                Some(cur)
+            BorrowState::Borrow(BorrowTy::Ref(val)) => {
+                self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(val.checked_add(1)?)));
+                Some(())
             }
-            (BorrowState::None, _) => None,
+            _ => None,
+        }
+    }
 
-            (BorrowState::Ref(val), BorrowChange::AddRef) => {
-                self.borrow.set(BorrowState::Ref(val.checked_add(1)?));
-                Some(cur)
+    fn try_add_mut(&self) -> Option<()> {
+        let cur = self.borrow.get();
+        match cur {
+            BorrowState::None => {
+                self.borrow.set(BorrowState::Borrow(BorrowTy::Mut));
+                Some(())
             }
-            (BorrowState::Ref(val), BorrowChange::DeRef) => {
+            _ => None,
+        }
+    }
+
+    /// Return a boolean indication whether this CellState should be dropped
+    fn try_de_ref(&self) -> bool {
+        let cur = self.borrow.get();
+        match cur {
+            BorrowState::Borrow(BorrowTy::Ref(val)) => {
                 match val.checked_sub(1) {
                     None => self.borrow.set(BorrowState::None),
-                    Some(val) => self.borrow.set(BorrowState::Ref(val)),
+                    Some(val) => self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(val))),
                 }
-                Some(cur)
+                false
             }
-            (BorrowState::Ref(_), _) => None,
-
-            (BorrowState::Mut, BorrowChange::DeMut) => {
-                self.borrow.set(BorrowState::None);
-                Some(cur)
-            }
-            (BorrowState::Mut, _) => None,
-
-            (BorrowState::Drop(DropState::Ref(val)), BorrowChange::DeRef) => {
+            BorrowState::Drop(BorrowTy::Ref(val)) => {
                 if let Some(val) = val.checked_sub(1) {
-                    self.borrow.set(BorrowState::Drop(DropState::Ref(val)));
+                    self.borrow.set(BorrowState::Drop(BorrowTy::Ref(val)));
+                    false
+                } else {
+                    true
                 }
-                Some(cur)
             }
-            (BorrowState::Drop(DropState::Mut), BorrowChange::DeMut) => {
-                Some(cur)
+            _ => false,
+        }
+    }
+
+    /// Return a boolean indication whether this CellState should be dropped
+    fn try_de_mut(&self) -> bool {
+        let cur = self.borrow.get();
+        match cur {
+            BorrowState::Borrow(BorrowTy::Mut) => {
+                self.borrow.set(BorrowState::None);
+                false
             }
-            (BorrowState::Drop(_), _) => None,
+            BorrowState::Drop(BorrowTy::Mut) => {
+                true
+            }
+            _ => false,
         }
     }
 
@@ -95,36 +91,6 @@ impl<T: ?Sized> CellState<T> {
     }
 }
 
-impl<T: ?Sized> CellState<T> {
-    fn alloc(val: &T) -> NonNull<CellState<T>> {
-        let layout = Layout::new::<Cell<BorrowState>>()
-            .extend(Layout::for_value(val))
-            .unwrap()
-            .0;
-
-        let meta = PtrRepr::new(val as *const T as *mut T)
-            .metadata();
-
-        let raw_ptr = unsafe { alloc::alloc::alloc(layout) }.cast();
-
-        let raw_ptr = PtrRepr::from_meta_ptr(meta, raw_ptr).ptr();
-
-        unsafe { NonNull::new_unchecked(raw_ptr) }
-    }
-
-    fn new_boxed(val: Box<T>) -> NonNull<CellState<T>> {
-        let alloc = Self::alloc(&val);
-        unsafe { (*alloc.as_ptr()).borrow = Cell::new(BorrowState::None) };
-        let size = mem::size_of_val(&*val);
-        unsafe { ptr::copy(
-            (&*val as *const T).cast::<u8>(),
-            ptr::addr_of_mut!((*alloc.as_ptr()).value).cast::<u8>(),
-            size,
-        ) };
-        alloc
-    }
-}
-
 impl<T> CellState<T> {
     fn new(val: T) -> CellState<T> {
         CellState {
@@ -134,22 +100,27 @@ impl<T> CellState<T> {
     }
 }
 
+#[cfg(feature = "unstable")]
+impl<T: CoerceUnsized<U>, U> CoerceUnsized<CellState<U>> for CellState<T> {}
+
 pub struct StableCell<T: ?Sized>(NonNull<CellState<T>>);
 
 impl<T: ?Sized> StableCell<T> {
-    pub fn new_boxed(val: Box<T>) -> StableCell<T> {
-        StableCell(CellState::new_boxed(val))
+    #[cfg(feature = "unstable")]
+    pub fn new_from<U: Unsize<T>>(val: U) -> StableCell<T> {
+        let ptr = Box::leak(Box::new(CellState::new(val)) as Box<CellState<T>>);
+        StableCell(NonNull::from(ptr))
     }
 
     pub fn try_borrow<'a>(&self) -> Option<StableRef<'a, T>> {
         let state = unsafe { self.0.as_ref() };
-        state.try_borrow(BorrowChange::AddRef)
+        state.try_add_ref()
             .map(|_| StableRef { state: self.0, _phantom: PhantomData })
     }
 
     pub fn try_borrow_mut<'a>(&self) -> Option<StableMut<'a, T>> {
         let state = unsafe { self.0.as_ref() };
-        state.try_borrow(BorrowChange::AddMut)
+        state.try_add_mut()
             .map(|_| StableMut { state: self.0, _phantom: PhantomData })
     }
 }
@@ -161,15 +132,26 @@ impl<T> StableCell<T> {
     }
 }
 
+unsafe impl<T> Send for StableCell<T>
+    where
+        T: ?Sized + Send
+{}
+
+impl<T> Clone for StableCell<T>
+    where
+        T: Clone,
+{
+    fn clone(&self) -> Self {
+        StableCell::new(self.try_borrow().expect("Couldn't borrow value to clone").clone())
+    }
+}
+
 impl<T: ?Sized> Drop for StableCell<T> {
     fn drop(&mut self) {
         let state = unsafe { self.0.as_ref() };
         match state.borrow.get() {
-            BorrowState::Ref(val) => {
-                state.borrow.set(BorrowState::Drop(DropState::Ref(val)))
-            }
-            BorrowState::Mut => {
-                state.borrow.set(BorrowState::Drop(DropState::Mut))
+            BorrowState::Borrow(ty) => {
+                state.borrow.set(BorrowState::Drop(ty))
             }
             _ => {
                 unsafe { Box::from_raw(self.0.as_ptr()) };
@@ -201,11 +183,8 @@ impl<T: ?Sized + PartialEq> PartialEq for StableRef<'_, T> {
 impl<T: ?Sized> Drop for StableRef<'_, T> {
     fn drop(&mut self) {
         let state = unsafe { self.state.as_ref() };
-        match state.try_borrow(BorrowChange::DeRef) {
-            Some(BorrowState::Drop(DropState::Ref(NONZERO_1))) => {
-                unsafe { Box::from_raw(self.state.as_ptr()) };
-            }
-            _ => (),
+        if state.try_de_ref() {
+            unsafe { Box::from_raw(self.state.as_ptr()) };
         }
     }
 }
@@ -239,11 +218,8 @@ impl<T: ?Sized> DerefMut for StableMut<'_, T> {
 impl<T: ?Sized> Drop for StableMut<'_, T> {
     fn drop(&mut self) {
         let state = unsafe { self.state.as_ref() };
-        match state.try_borrow(BorrowChange::DeMut) {
-            Some(BorrowState::Drop(DropState::Mut)) => {
-                unsafe { Box::from_raw(self.state.as_ptr()) };
-            }
-            _ => (),
+        if state.try_de_mut() {
+            unsafe { Box::from_raw(self.state.as_ptr()) };
         }
     }
 }
@@ -251,6 +227,14 @@ impl<T: ?Sized> Drop for StableMut<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(feature = "unstable")]
+    fn test_unsized() {
+        let cell = StableCell::<[i32]>::new_from([1, 2, 3]);
+        let b = cell.try_borrow().unwrap();
+        assert_eq!(&*b, &[1, 2, 3]);
+    }
 
     #[test]
     fn test_borrow() {
