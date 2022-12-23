@@ -202,6 +202,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_zst() {
+        let cell = StableCell::new(());
+        let b = cell.try_borrow().unwrap();
+        assert_eq!(*b, ());
+        drop(b);
+        let bm = cell.try_borrow_mut().unwrap();
+        assert_eq!(*bm, ());
+        drop(bm);
+    }
+
+    #[test]
     #[cfg(feature = "unstable")]
     fn test_unsized() {
         let cell = StableCell::<[i32]>::new_from([1, 2, 3]);

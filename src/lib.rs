@@ -26,6 +26,7 @@
 
 extern crate alloc;
 
+pub mod simple_tree;
 pub mod object_tree;
 pub mod stable;
 pub(crate) mod util;

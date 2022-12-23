@@ -154,7 +154,7 @@ impl<'a, 'b, T: ?Sized> NodeRefMut<'a, 'b, T> {
     /// Create a new child of this node from a type that unsizes into the type of the tree
     #[cfg(feature = "unstable")]
     pub fn new_child_from<U: Unsize<T>>(&mut self, child: U) {
-        self.tree.new_child_from(child, self.key());
+        self.tree.add_child_from(child, self.key());
     }
 
     /// Set the parent of this node, unsetting the current one as necessary
@@ -176,7 +176,7 @@ impl<'a, 'b, T: ?Sized> NodeRefMut<'a, 'b, T> {
 impl<T> NodeRefMut<'_, '_, T> {
     /// Create a new child of this node from the provided value
     pub fn new_child(&mut self, child: T) {
-        self.tree.new_child(child, self.key());
+        self.tree.add_child(child, self.key());
     }
 }
 

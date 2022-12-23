@@ -9,6 +9,20 @@ use alloc::vec::Vec;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
 use crate::object_tree::{Stable, Cell};
 
+struct Relations {
+    parents: SecondaryMap<TreeKey, TreeKey>,
+    children: SecondaryMap<TreeKey, Vec<TreeKey>>,
+}
+
+impl Relations {
+    fn new() -> Relations {
+        Relations {
+            parents: SecondaryMap::new(),
+            children: SecondaryMap::new(),
+        }
+    }
+}
+
 new_key_type! {
     /// Key for a node in a tree. Altering the tree will not invalidate the key, as long
     /// as the node it references isn't removed
@@ -20,8 +34,7 @@ new_key_type! {
 /// node references.
 pub struct Tree<T: ?Sized> {
     nodes: Cell<SlotMap<TreeKey, Stable<T>>>,
-    parents: Cell<SecondaryMap<TreeKey, TreeKey>>,
-    children: Cell<SecondaryMap<TreeKey, Vec<TreeKey>>>,
+    relations: Cell<Relations>,
     roots: Cell<Vec<TreeKey>>,
 }
 
@@ -46,33 +59,31 @@ impl<T: ?Sized> Tree<T> {
     #[cfg(feature = "unstable")]
     pub fn add_root_from<U: Unsize<T>>(&self, item: U) -> TreeKey {
         let mut nodes = self.nodes.borrow_mut();
-
         let cell = Stable::new_from(item);
-
         let new_key = nodes.insert(cell);
-        
         self.roots.borrow_mut().push(new_key);
-
         new_key
     }
 
     /// Create a new child of a node from a type that unsizes into the type of the tree
     #[cfg(feature = "unstable")]
-    pub fn new_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) -> Option<TreeKey> {
+    pub fn add_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) -> Option<TreeKey> {
         let cell = Stable::new_from(item);
 
         let new_key = self.nodes
             .borrow_mut()
             .insert(cell);
 
-        self.children
-            .borrow_mut()
+        let mut relations = self.relations.borrow_mut();
+
+        relations
+            .children
             .entry(parent)?
             .or_default()
             .push(new_key);
 
-        self.parents
-            .borrow_mut()
+        relations
+            .parents
             .insert(new_key, parent);
 
         Some(new_key)
@@ -81,19 +92,21 @@ impl<T: ?Sized> Tree<T> {
     /// Set the first node as the parent of the second node,
     /// unsetting the current parent if there is one
     pub fn set_child(&self, parent: TreeKey, child: TreeKey) {
-        let mut children = self.children.borrow_mut();
-        let mut parents = self.parents.borrow_mut();
+        let mut relations = self.relations.borrow_mut();
 
-        let old_parent = parents.get(child);
+        let old_parent = relations.parents.get(child);
 
         // Remove child's existing parent (remove it as a root, if it had no parent)
         match old_parent {
-            Some(&old_parent) => children[old_parent].retain(|&k| k != child),
+            Some(&old_parent) => relations.children[old_parent].retain(|&k| k != child),
             None => self.roots.borrow_mut().retain(|&k| k != child),
         }
 
-        parents.insert(child, parent);
-        children
+        relations
+            .parents
+            .insert(child, parent);
+        relations
+            .children
             .entry(parent)
             .unwrap()
             .or_default()
@@ -102,22 +115,23 @@ impl<T: ?Sized> Tree<T> {
 
     /// Remove the second node as a child of the first node
     pub fn remove_child(&self, parent: TreeKey, child: TreeKey) {
-        self.children.borrow_mut()[parent].retain(|&k| k != child);
-        self.parents.borrow_mut().remove(child);
+        let mut relations = self.relations.borrow_mut();
+
+        relations.children[parent].retain(|&k| k != child);
+        relations.parents.remove(child);
         self.roots.borrow_mut().push(child);
     }
 
     /// Remove a node from the tree, removing all children as well. Fails if the node or any
     /// of its children are currently borrowed.
-    pub fn remove_node_recursive(&self, node: TreeKey) {
+    pub fn remove_recursive(&self, node: TreeKey) {
+        let mut relations = self.relations.borrow_mut();
+        let relations = &mut *relations;
+
         let mut nodes = self.nodes
             .borrow_mut();
-        let mut children = self.children
-            .borrow_mut();
-        let mut parents = self.parents
-            .borrow_mut();
 
-        recurse_remove(node, &mut nodes, &mut parents, &mut children)
+        recurse_remove(node, &mut nodes, &mut relations.parents, &mut relations.children)
     }
 
     /// Try to get an immutable reference to a node identified by the provided key
@@ -208,13 +222,14 @@ impl<T: ?Sized> Tree<T> {
 
     /// Get the parent key of a node identified by the provided key
     pub fn parent_key_of(&self, child: TreeKey) -> Option<TreeKey> {
-        self.parents.borrow().get(child).copied()
+        self.relations.borrow().parents.get(child).copied()
     }
 
     /// Get the child keys of a node identified by the provided key
     pub fn child_keys_of(&self, parent: TreeKey) -> impl Iterator<Item = TreeKey> {
-        self.children
+        self.relations
             .borrow()
+            .children
             .get(parent)
             .cloned()
             .unwrap_or_default()
@@ -223,33 +238,33 @@ impl<T: ?Sized> Tree<T> {
 }
 
 impl<T> Tree<T> {
+    /// Add a new root to the tree initialized with the provided value
+    pub fn add_root(&self, item: T) -> TreeKey {
+        let mut nodes = self.nodes.borrow_mut();
+        let cell = Stable::new(item);
+        let new_key = nodes.insert(cell);
+        self.roots.borrow_mut().push(new_key);
+        new_key
+    }
+
     /// Create a new child of a node from the provided value
-    pub fn new_child(&self, item: T, parent: TreeKey) {
+    pub fn add_child(&self, item: T, parent: TreeKey) -> TreeKey {
         let cell = Stable::new(item);
 
         let new_key = self.nodes.borrow_mut().insert(cell);
 
-        self.children
-            .borrow_mut()
+        let mut relations = self.relations.borrow_mut();
+
+        relations
+            .children
             .entry(parent)
             .unwrap()
             .or_default()
             .push(new_key);
 
-        self.parents
-            .borrow_mut()
+        relations
+            .parents
             .insert(new_key, parent);
-    }
-
-    /// Add a new root to the tree initialized with the provided value
-    pub fn add_root(&self, item: T) -> TreeKey {
-        let mut nodes = self.nodes.borrow_mut();
-
-        let cell = Stable::new(item);
-
-        let new_key = nodes.insert(cell);
-
-        self.roots.borrow_mut().push(new_key);
 
         new_key
     }
@@ -268,8 +283,7 @@ impl<T: ?Sized> Default for Tree<T> {
     fn default() -> Self {
         Tree {
             nodes: Cell::new(SlotMap::with_key()),
-            parents: Cell::new(SecondaryMap::new()),
-            children: Cell::new(SecondaryMap::new()),
+            relations: Cell::new(Relations::new()),
             roots: Cell::new(Vec::new()),
         }
     }
