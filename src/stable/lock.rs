@@ -1,3 +1,5 @@
+//! A thread-safe stable cell
+
 use core::cell::UnsafeCell;
 use core::ptr::NonNull;
 use core::marker::PhantomData;
@@ -38,31 +40,31 @@ impl<T: ?Sized> LockState<T> {
             .ok()
     }
 
-    /// Return a boolean indication whether this CellState should be dropped
+    /// Return a boolean indication whether this `LockState` should be dropped
     fn try_de_ref(&self) -> bool {
         let mut drop_flag = false;
-        drop(self.borrow.fetch_update(
+        let _ = self.borrow.fetch_update(
             Ordering::AcqRel,
             Ordering::Acquire,
             |cur| {
                 let (out, drop) = BorrowState::from_val(cur).decr_ref();
                 drop_flag = drop;
                 Some(out.to_val())
-            }));
+            });
         drop_flag
     }
 
-    /// Return a boolean indication whether this CellState should be dropped
+    /// Return a boolean indication whether this `LockState` should be dropped
     fn try_de_mut(&self) -> bool {
         let mut drop_flag = false;
-        drop(self.borrow.fetch_update(
+        let _ = self.borrow.fetch_update(
             Ordering::AcqRel,
             Ordering::Acquire,
             |cur| {
                 let (out, drop) = BorrowState::from_val(cur).decr_mut();
                 drop_flag = drop;
                 Some(out.to_val())
-            }));
+            });
         drop_flag
     }
 
@@ -87,18 +89,21 @@ impl<T> LockState<T> {
 pub struct StableLock<T: ?Sized>(NonNull<LockState<T>>);
 
 impl<T: ?Sized> StableLock<T> {
+    /// Create a new `StableLock` from a type which unsizes to the cell type
     #[cfg(feature = "unstable")]
     pub fn new_from<U: Unsize<T>>(val: U) -> StableLock<T> {
         let ptr = Box::leak(Box::new(LockState::new(val)) as Box<LockState<T>>);
         StableLock(NonNull::from(ptr))
     }
 
+    /// Attempt to get a shared borrow to this cell. The borrow may live as long as `T`
     pub fn try_borrow<'a>(&self) -> Option<StableRef<'a, T>> {
         let state = unsafe { self.0.as_ref() };
         state.try_add_ref()
             .map(|_| StableRef { state: self.0, _phantom: PhantomData })
     }
 
+    /// Attempt to get a unique borrow to this cell. The borrow may live as long as `T`
     pub fn try_borrow_mut<'a>(&self) -> Option<StableMut<'a, T>> {
         let state = unsafe { self.0.as_ref() };
         state.try_add_mut()
@@ -120,7 +125,7 @@ impl<T: ?Sized> Drop for StableLock<T> {
     fn drop(&mut self) {
         let mut drop_flag = false;
         let state = unsafe { self.0.as_ref() };
-        drop(state.borrow.fetch_update(
+        let _ = state.borrow.fetch_update(
             Ordering::AcqRel,
             Ordering::Acquire,
             |cur| {
@@ -131,7 +136,7 @@ impl<T: ?Sized> Drop for StableLock<T> {
                 } else {
                     Some(state.make_drop().to_val())
                 }
-            }));
+            });
         if drop_flag {
             unsafe { Box::from_raw(self.0.as_ptr()) };
         }

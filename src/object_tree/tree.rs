@@ -58,7 +58,7 @@ impl<T: ?Sized> Tree<T> {
 
     /// Create a new child of a node from a type that unsizes into the type of the tree
     #[cfg(feature = "unstable")]
-    pub fn new_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) {
+    pub fn new_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) -> Option<TreeKey> {
         let cell = Stable::new_from(item);
 
         let new_key = self.nodes
@@ -67,14 +67,15 @@ impl<T: ?Sized> Tree<T> {
 
         self.children
             .borrow_mut()
-            .entry(parent)
-            .unwrap()
+            .entry(parent)?
             .or_default()
             .push(new_key);
 
         self.parents
             .borrow_mut()
             .insert(new_key, parent);
+
+        Some(new_key)
     }
 
     /// Set the first node as the parent of the second node,
@@ -120,14 +121,14 @@ impl<T: ?Sized> Tree<T> {
     }
 
     /// Try to get an immutable reference to a node identified by the provided key
-    pub fn try_get<'a, 'b>(&'a self, key: TreeKey) -> Result<NodeRef<'a, 'b, T>> {
+    pub fn try_get<'b>(&self, key: TreeKey) -> Result<NodeRef<'_, 'b, T>> {
         let nodes = self.nodes.borrow();
         let rc = nodes.get(key).ok_or(Error::Missing)?;
         NodeRef::try_borrow(self, key, rc)
     }
 
     /// Try to get a mutable reference to a node identified by the provided key
-    pub fn try_get_mut<'a, 'b>(&'a self, key: TreeKey) -> Result<NodeRefMut<'a, 'b, T>> {
+    pub fn try_get_mut<'b>(&self, key: TreeKey) -> Result<NodeRefMut<'_, 'b, T>> {
         let nodes = self.nodes.borrow();
         let rc = nodes.get(key).ok_or(Error::Missing)?;
         NodeRefMut::try_borrow(self, key, rc)
@@ -167,7 +168,7 @@ impl<T: ?Sized> Tree<T> {
     /// Iterate over the roots of this tree.
     ///
     /// A root is any node that has no parent
-    pub fn roots<'a>(&'a self) -> impl Iterator<Item = Result<NodeRef<'a, '_, T>>> + 'a {
+    pub fn roots(&self) -> impl Iterator<Item = Result<NodeRef<'_, '_, T>>> + '_ {
         let nodes = self.nodes.borrow();
 
         self.roots
@@ -184,7 +185,7 @@ impl<T: ?Sized> Tree<T> {
     /// Iterator over the roots of this tree mutable
     ///
     /// A root is any node that has no parent
-    pub fn roots_mut<'a>(&'a self) -> impl Iterator<Item = Result<NodeRefMut<'a, '_, T>>> {
+    pub fn roots_mut(&self) -> impl Iterator<Item = Result<NodeRefMut<'_, '_, T>>> + '_ {
         let nodes = self.nodes.borrow();
 
         self.roots

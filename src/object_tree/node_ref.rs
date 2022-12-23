@@ -191,18 +191,18 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for NodeRefMut<'_, '_, T> {
 
 impl<T: ?Sized> DerefMut for NodeRefMut<'_, '_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.node
+        &mut self.node
     }
 }
 
 impl<T: ?Sized> AsMut<T> for NodeRefMut<'_, '_, T> {
     fn as_mut(&mut self) -> &mut T {
-        &mut *self.node
+        &mut self.node
     }
 }
 
 impl<T: ?Sized> BorrowMut<T> for NodeRefMut<'_, '_, T> {
     fn borrow_mut(&mut self) -> &mut T {
-        &mut *self.node
+        &mut self.node
     }
 }

@@ -1,3 +1,5 @@
+//! A non-thread-safe stable cell
+
 use alloc::boxed::Box;
 use core::cell::{Cell, UnsafeCell};
 use core::marker::PhantomData;
@@ -39,7 +41,7 @@ impl<T: ?Sized> CellState<T> {
         }
     }
 
-    /// Return a boolean indication whether this CellState should be dropped
+    /// Return a boolean indication whether this `CellState` should be dropped
     fn try_de_ref(&self) -> bool {
         let cur = self.borrow.get();
         let (new, drop) = cur.decr_ref();
@@ -47,7 +49,7 @@ impl<T: ?Sized> CellState<T> {
         drop
     }
 
-    /// Return a boolean indication whether this CellState should be dropped
+    /// Return a boolean indication whether this `CellState` should be dropped
     fn try_de_mut(&self) -> bool {
         let cur = self.borrow.get();
         let (new, drop) = cur.decr_mut();
@@ -76,21 +78,26 @@ impl<T> CellState<T> {
 #[cfg(feature = "unstable")]
 impl<T: CoerceUnsized<U>, U> CoerceUnsized<CellState<U>> for CellState<T> {}
 
+/// A stable cell. Mixes traits of an `Rc` and a `RefCell` - Borrows may outlive the cell itself,
+/// and also may be mutable due to the single-ownership.
 pub struct StableCell<T: ?Sized>(NonNull<CellState<T>>);
 
 impl<T: ?Sized> StableCell<T> {
+    /// Create a new `StableCell` from a type which unsizes to the cell type
     #[cfg(feature = "unstable")]
     pub fn new_from<U: Unsize<T>>(val: U) -> StableCell<T> {
         let ptr = Box::leak(Box::new(CellState::new(val)) as Box<CellState<T>>);
         StableCell(NonNull::from(ptr))
     }
 
+    /// Attempt to get a shared borrow to this cell. The borrow may live as long as `T`
     pub fn try_borrow<'a>(&self) -> Option<StableRef<'a, T>> {
         let state = unsafe { self.0.as_ref() };
         state.try_add_ref()
             .map(|_| StableRef { state: self.0, _phantom: PhantomData })
     }
 
+    /// Attempt to get a unique borrow to this cell. The borrow may live as long as `T`
     pub fn try_borrow_mut<'a>(&self) -> Option<StableMut<'a, T>> {
         let state = unsafe { self.0.as_ref() };
         state.try_add_mut()
