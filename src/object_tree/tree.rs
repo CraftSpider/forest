@@ -3,25 +3,11 @@ use super::error::{Error, Result};
 use super::{NodeRef, NodeRefMut};
 
 use core::fmt;
-use core::cell::{Cell, RefCell};
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
 use alloc::vec::Vec;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
-use crate::stable::cell::StableCell;
-
-trait CellExt<T> {
-    fn with<U>(&self, f: impl FnOnce(&mut T) -> U) -> U;
-}
-
-impl<T: Default> CellExt<T> for Cell<T> {
-    fn with<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
-        let mut val = self.take();
-        let out = f(&mut val);
-        self.set(val);
-        out
-    }
-}
+use crate::object_tree::{Stable, Cell};
 
 new_key_type! {
     /// Key for a node in a tree. Altering the tree will not invalidate the key, as long
@@ -33,9 +19,9 @@ new_key_type! {
 /// multiple nodes at once. Supports access via slot keys, or by traversing immutable or mutable
 /// node references.
 pub struct Tree<T: ?Sized> {
-    nodes: RefCell<SlotMap<TreeKey, StableCell<T>>>,
-    parents: RefCell<SecondaryMap<TreeKey, TreeKey>>,
-    children: RefCell<SecondaryMap<TreeKey, Vec<TreeKey>>>,
+    nodes: Cell<SlotMap<TreeKey, Stable<T>>>,
+    parents: Cell<SecondaryMap<TreeKey, TreeKey>>,
+    children: Cell<SecondaryMap<TreeKey, Vec<TreeKey>>>,
     roots: Cell<Vec<TreeKey>>,
 }
 
@@ -61,11 +47,11 @@ impl<T: ?Sized> Tree<T> {
     pub fn add_root_from<U: Unsize<T>>(&self, item: U) -> TreeKey {
         let mut nodes = self.nodes.borrow_mut();
 
-        let cell = StableCell::new_from(item);
+        let cell = Stable::new_from(item);
 
         let new_key = nodes.insert(cell);
         
-        self.roots.with(|roots| roots.push(new_key));
+        self.roots.borrow_mut().push(new_key);
 
         new_key
     }
@@ -73,7 +59,7 @@ impl<T: ?Sized> Tree<T> {
     /// Create a new child of a node from a type that unsizes into the type of the tree
     #[cfg(feature = "unstable")]
     pub fn new_child_from<U: Unsize<T>>(&self, item: U, parent: TreeKey) {
-        let cell = StableCell::new_from(item);
+        let cell = Stable::new_from(item);
 
         let new_key = self.nodes
             .borrow_mut()
@@ -102,7 +88,7 @@ impl<T: ?Sized> Tree<T> {
         // Remove child's existing parent (remove it as a root, if it had no parent)
         match old_parent {
             Some(&old_parent) => children[old_parent].retain(|&k| k != child),
-            None => self.roots.with(|roots| roots.retain(|&k| k != child)),
+            None => self.roots.borrow_mut().retain(|&k| k != child),
         }
 
         parents.insert(child, parent);
@@ -117,7 +103,7 @@ impl<T: ?Sized> Tree<T> {
     pub fn remove_child(&self, parent: TreeKey, child: TreeKey) {
         self.children.borrow_mut()[parent].retain(|&k| k != child);
         self.parents.borrow_mut().remove(child);
-        self.roots.with(|roots| roots.push(child));
+        self.roots.borrow_mut().push(child);
     }
 
     /// Remove a node from the tree, removing all children as well. Fails if the node or any
@@ -184,16 +170,15 @@ impl<T: ?Sized> Tree<T> {
     pub fn roots<'a>(&'a self) -> impl Iterator<Item = Result<NodeRef<'a, '_, T>>> + 'a {
         let nodes = self.nodes.borrow();
 
-        let roots = self.roots.with(|roots| {
-            roots.iter()
-                .map(|key| {
-                    let node = nodes.get(*key).ok_or(Error::Missing)?;
-                    NodeRef::try_borrow(self, *key, node)
-                })
-                .collect::<Vec<_>>()
-        });
-
-        roots.into_iter()
+        self.roots
+            .borrow()
+            .iter()
+            .map(|key| {
+                let node = nodes.get(*key).ok_or(Error::Missing)?;
+                NodeRef::try_borrow(self, *key, node)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Iterator over the roots of this tree mutable
@@ -202,24 +187,22 @@ impl<T: ?Sized> Tree<T> {
     pub fn roots_mut<'a>(&'a self) -> impl Iterator<Item = Result<NodeRefMut<'a, '_, T>>> {
         let nodes = self.nodes.borrow();
 
-        let roots = self.roots.with(|roots| {
-            roots
-                .iter()
-                .map(|key| {
-                    let node = nodes.get(*key).ok_or(Error::Missing)?;
-                    NodeRefMut::try_borrow(self, *key, node)
-                })
-                .collect::<Vec<_>>()
-        });
-
-        roots.into_iter()
+        self.roots
+            .borrow()
+            .iter()
+            .map(|key| {
+                let node = nodes.get(*key).ok_or(Error::Missing)?;
+                NodeRefMut::try_borrow(self, *key, node)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Iterate over the keys of all the roots in this tree
     ///
     /// A root is any node that has no parent
     pub fn root_keys(&self) -> impl Iterator<Item = TreeKey> {
-        self.roots.with(|roots| roots.clone()).into_iter()
+        self.roots.borrow().clone().into_iter()
     }
 
     /// Get the parent key of a node identified by the provided key
@@ -241,7 +224,7 @@ impl<T: ?Sized> Tree<T> {
 impl<T> Tree<T> {
     /// Create a new child of a node from the provided value
     pub fn new_child(&self, item: T, parent: TreeKey) {
-        let cell = StableCell::new(item);
+        let cell = Stable::new(item);
 
         let new_key = self.nodes.borrow_mut().insert(cell);
 
@@ -261,11 +244,11 @@ impl<T> Tree<T> {
     pub fn add_root(&self, item: T) -> TreeKey {
         let mut nodes = self.nodes.borrow_mut();
 
-        let cell = StableCell::new(item);
+        let cell = Stable::new(item);
 
         let new_key = nodes.insert(cell);
 
-        self.roots.with(|roots| roots.push(new_key));
+        self.roots.borrow_mut().push(new_key);
 
         new_key
     }
@@ -283,9 +266,9 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Tree<T> {
 impl<T: ?Sized> Default for Tree<T> {
     fn default() -> Self {
         Tree {
-            nodes: RefCell::new(SlotMap::with_key()),
-            parents: RefCell::new(SecondaryMap::new()),
-            children: RefCell::new(SecondaryMap::new()),
+            nodes: Cell::new(SlotMap::with_key()),
+            parents: Cell::new(SecondaryMap::new()),
+            children: Cell::new(SecondaryMap::new()),
             roots: Cell::new(Vec::new()),
         }
     }
@@ -310,7 +293,7 @@ fn recurse_tree<T: ?Sized + fmt::Debug>(
 
 fn recurse_remove<T: ?Sized>(
     node: TreeKey,
-    nodes: &mut SlotMap<TreeKey, StableCell<T>>,
+    nodes: &mut SlotMap<TreeKey, Stable<T>>,
     parents: &mut SecondaryMap<TreeKey, TreeKey>,
     children: &mut SecondaryMap<TreeKey, Vec<TreeKey>>,
 ) {

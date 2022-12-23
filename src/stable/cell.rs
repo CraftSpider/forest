@@ -7,8 +7,7 @@ use core::ptr::NonNull;
 use core::marker::Unsize;
 #[cfg(feature = "unstable")]
 use core::ops::CoerceUnsized;
-use crate::stable::util::{BorrowState, BorrowTy, NONZERO_1};
-use crate::util::NonZeroExt;
+use crate::stable::util::BorrowState;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -20,24 +19,20 @@ struct CellState<T: ?Sized> {
 impl<T: ?Sized> CellState<T> {
     fn try_add_ref(&self) -> Option<()> {
         let cur = self.borrow.get();
-        match cur {
-            BorrowState::None => {
-                self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(NONZERO_1)));
+        match cur.incr_ref() {
+            Some(new) => {
+                self.borrow.set(new);
                 Some(())
             }
-            BorrowState::Borrow(BorrowTy::Ref(val)) => {
-                self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(val.checked_add(1)?)));
-                Some(())
-            }
-            _ => None,
+            None => None,
         }
     }
 
     fn try_add_mut(&self) -> Option<()> {
         let cur = self.borrow.get();
-        match cur {
-            BorrowState::None => {
-                self.borrow.set(BorrowState::Borrow(BorrowTy::Mut));
+        match cur.incr_mut() {
+            Some(new) => {
+                self.borrow.set(new);
                 Some(())
             }
             _ => None,
@@ -47,39 +42,17 @@ impl<T: ?Sized> CellState<T> {
     /// Return a boolean indication whether this CellState should be dropped
     fn try_de_ref(&self) -> bool {
         let cur = self.borrow.get();
-        match cur {
-            BorrowState::Borrow(BorrowTy::Ref(val)) => {
-                match val.checked_sub(1) {
-                    None => self.borrow.set(BorrowState::None),
-                    Some(val) => self.borrow.set(BorrowState::Borrow(BorrowTy::Ref(val))),
-                }
-                false
-            }
-            BorrowState::Drop(BorrowTy::Ref(val)) => {
-                if let Some(val) = val.checked_sub(1) {
-                    self.borrow.set(BorrowState::Drop(BorrowTy::Ref(val)));
-                    false
-                } else {
-                    true
-                }
-            }
-            _ => false,
-        }
+        let (new, drop) = cur.decr_ref();
+        self.borrow.set(new);
+        drop
     }
 
     /// Return a boolean indication whether this CellState should be dropped
     fn try_de_mut(&self) -> bool {
         let cur = self.borrow.get();
-        match cur {
-            BorrowState::Borrow(BorrowTy::Mut) => {
-                self.borrow.set(BorrowState::None);
-                false
-            }
-            BorrowState::Drop(BorrowTy::Mut) => {
-                true
-            }
-            _ => false,
-        }
+        let (new, drop) = cur.decr_mut();
+        self.borrow.set(new);
+        drop
     }
 
     unsafe fn val_ref<'a>(&self) -> &'a T {
@@ -94,7 +67,7 @@ impl<T: ?Sized> CellState<T> {
 impl<T> CellState<T> {
     fn new(val: T) -> CellState<T> {
         CellState {
-            borrow: Cell::new(BorrowState::None),
+            borrow: Cell::new(BorrowState::new()),
             value: UnsafeCell::new(val),
         }
     }
@@ -132,14 +105,9 @@ impl<T> StableCell<T> {
     }
 }
 
-unsafe impl<T> Send for StableCell<T>
-    where
-        T: ?Sized + Send
-{}
-
 impl<T> Clone for StableCell<T>
-    where
-        T: Clone,
+where
+    T: Clone,
 {
     fn clone(&self) -> Self {
         StableCell::new(self.try_borrow().expect("Couldn't borrow value to clone").clone())
@@ -149,13 +117,11 @@ impl<T> Clone for StableCell<T>
 impl<T: ?Sized> Drop for StableCell<T> {
     fn drop(&mut self) {
         let state = unsafe { self.0.as_ref() };
-        match state.borrow.get() {
-            BorrowState::Borrow(ty) => {
-                state.borrow.set(BorrowState::Drop(ty))
-            }
-            _ => {
-                unsafe { Box::from_raw(self.0.as_ptr()) };
-            }
+        let borrow = state.borrow.get();
+        if borrow.is_none() {
+            unsafe { Box::from_raw(self.0.as_ptr()) };
+        } else {
+            state.borrow.set(borrow.make_drop());
         }
     }
 }

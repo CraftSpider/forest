@@ -11,6 +11,40 @@
 //! Implementation of a nicely traversable tree that supports mutable references to multiple
 //! nodes concurrently
 
+#[cfg(not(feature = "atomic"))]
+mod __stable {
+    pub type Stable<T> = crate::stable::cell::StableCell<T>;
+    pub type StableRef<'a, T> = crate::stable::cell::StableRef<'a, T>;
+    pub type StableMut<'a, T> = crate::stable::cell::StableMut<'a, T>;
+
+    pub type Cell<T> = core::cell::RefCell<T>;
+}
+
+#[cfg(feature = "atomic")]
+mod __stable {
+    pub type Stable<T> = crate::stable::lock::StableLock<T>;
+    pub type StableRef<'a, T> = crate::stable::lock::StableRef<'a, T>;
+    pub type StableMut<'a, T> = crate::stable::lock::StableMut<'a, T>;
+
+    pub struct Cell<T>(std::sync::Mutex<T>);
+
+    impl<T> Cell<T> {
+        pub fn new(val: T) -> Cell<T> {
+            Cell(std::sync::Mutex::new(val))
+        }
+
+        pub fn borrow(&self) -> std::sync::MutexGuard<'_, T> {
+            self.0.lock().unwrap()
+        }
+
+        pub fn borrow_mut(&self) -> std::sync::MutexGuard<'_, T> {
+            self.0.lock().unwrap()
+        }
+    }
+}
+
+pub(crate) use __stable::*;
+
 mod error;
 mod node_ref;
 mod tree;

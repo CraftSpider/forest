@@ -8,8 +8,7 @@ use core::borrow::{Borrow, BorrowMut};
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
 use alloc::vec::Vec;
-use crate::object_tree::Error;
-use crate::stable::cell::{StableCell, StableMut, StableRef};
+use crate::object_tree::{Error, Stable, StableRef, StableMut};
 
 macro_rules! ref_common {
     ($ty:ty) => {
@@ -90,10 +89,8 @@ impl<'a, 'b, T: ?Sized> NodeRef<'a, 'b, T> {
     pub(super) fn try_borrow(
         tree: &'a Tree<T>,
         key: TreeKey,
-        cell: &'_ StableCell<T>,
+        cell: &'_ Stable<T>,
     ) -> Result<NodeRef<'a, 'b, T>> {
-        // SAFETY: We only take immutable references to this data except when dropping
-        //         Where we ensure no references live to any nodes
         Ok(NodeRef {
             tree,
             mykey: key,
@@ -115,7 +112,7 @@ impl<'a, 'b, T: ?Sized> NodeRef<'a, 'b, T> {
     }
 }
 
-impl<T: /* ?Sized + */ fmt::Debug> fmt::Debug for NodeRef<'_, '_, T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for NodeRef<'_, '_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeRef")
             .field("mykey", &self.mykey)
@@ -138,10 +135,8 @@ impl<'a, 'b, T: ?Sized> NodeRefMut<'a, 'b, T> {
     pub(super) fn try_borrow(
         tree: &'a Tree<T>,
         key: TreeKey,
-        cell: &'_ StableCell<T>,
+        cell: &'_ Stable<T>,
     ) -> Result<NodeRefMut<'a, 'b, T>> {
-        // SAFETY: We only take immutable references to this data except when dropping
-        //         Where we ensure no references live to any nodes
         Ok(NodeRefMut {
             tree,
             mykey: key,
