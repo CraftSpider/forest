@@ -149,7 +149,7 @@ impl<T: ?Sized> Tree<T> {
     }
 
     /// Iterate over all nodes in this tree, in no particular order
-    pub fn unordered_iter(&self) -> impl Iterator<Item = Result<NodeRef<'_, '_, T>>> {
+    pub fn unordered_iter(&self) -> impl Iterator<Item = Result<NodeRef<'_, '_, T>>> + '_ {
         self.nodes
             .borrow()
             .iter()
@@ -161,7 +161,7 @@ impl<T: ?Sized> Tree<T> {
     }
 
     /// Iterate over all nodes in this tree mutably, in no particular order
-    pub fn unordered_iter_mut(&self) -> impl Iterator<Item = Result<NodeRefMut<'_, '_, T>>> {
+    pub fn unordered_iter_mut(&self) -> impl Iterator<Item = Result<NodeRefMut<'_, '_, T>>> + '_ {
         self.nodes
             .borrow()
             .iter()
@@ -171,7 +171,7 @@ impl<T: ?Sized> Tree<T> {
     }
 
     /// Iterator over the keys of all nodes in this tree, in no particular order
-    pub fn unordered_keys(&self) -> impl Iterator<Item = TreeKey> {
+    pub fn unordered_keys(&self) -> impl Iterator<Item = TreeKey> + '_ {
         self.nodes
             .borrow()
             .keys()
@@ -226,7 +226,7 @@ impl<T: ?Sized> Tree<T> {
     }
 
     /// Get the child keys of a node identified by the provided key
-    pub fn child_keys_of(&self, parent: TreeKey) -> impl Iterator<Item = TreeKey> {
+    pub fn child_keys_of(&self, parent: TreeKey) -> impl Iterator<Item = TreeKey> + '_ {
         self.relations
             .borrow()
             .children
