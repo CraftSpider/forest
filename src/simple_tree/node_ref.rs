@@ -160,7 +160,9 @@ impl<'a, T> NodeMut<'a, T> {
     }
 
     fn downgrade(mut self) -> NodeMutLimited<'a, T> {
-        NodeMutLimited::new(self.node_mut())
+        let r = self.node_mut();
+        let r = unsafe { &mut *(r as *mut Node<T>) };
+        NodeMutLimited::new(r)
     }
 
     fn tree(&self) -> &Tree<T> {
