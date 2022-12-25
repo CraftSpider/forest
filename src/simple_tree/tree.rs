@@ -1,7 +1,8 @@
 
 use slotmap::{new_key_type, SlotMap};
 use alloc::vec::Vec;
-use crate::simple_tree::Node;
+use std::ptr::NonNull;
+use crate::simple_tree::{Node, NodeMut, NodeMutLimited, NodeRef};
 
 new_key_type! {
     /// Key for a node in a tree. Altering the tree will not invalidate the key, as long
@@ -17,6 +18,14 @@ pub struct Tree<T> {
 impl<T> Tree<T> {
     pub fn new() -> Tree<T> {
         Tree::default()
+    }
+
+    pub(crate) fn raw_nodes(&self) -> &SlotMap<TreeKey, Node<T>> {
+        &self.nodes
+    }
+
+    pub(crate) fn raw_nodes_mut(&mut self) -> &mut SlotMap<TreeKey, Node<T>> {
+        &mut self.nodes
     }
 
     /// Get the length of this tree, the total number of nodes
@@ -93,33 +102,42 @@ impl<T> Tree<T> {
     }
 
     /// Try to get an immutable reference to a node identified by the provided key
-    pub fn try_get(&self, key: TreeKey) -> Option<&Node<T>> {
-        self.nodes.get(key)
+    pub fn try_get(&self, key: TreeKey) -> Option<NodeRef<'_, T>> {
+        Some(NodeRef::new(self, self.nodes.get(key)?))
     }
 
     /// Try to get a mutable reference to a node identified by the provided key
-    pub fn try_get_mut(&mut self, key: TreeKey) -> Option<&mut Node<T>> {
-        self.nodes.get_mut(key)
+    pub fn try_get_mut(&mut self, key: TreeKey) -> Option<NodeMut<'_, T>> {
+        let this_ptr = unsafe { NonNull::new_unchecked(self) };
+        let node = NonNull::from(self.nodes.get_mut(key)?);
+
+        Some(NodeMut::new(this_ptr, node, key))
     }
 
-    pub fn try_get_many_mut<const N: usize>(&mut self, keys: [TreeKey; N]) -> Option<[&mut Node<T>; N]> {
-        self.nodes.get_disjoint_mut(keys)
+    pub fn try_get_many_mut<const N: usize>(&mut self, keys: [TreeKey; N]) -> Option<[NodeMutLimited<'_, T>; N]> {
+        Some(
+            self.nodes
+                .get_disjoint_mut(keys)?
+                .map(|node| NodeMutLimited::new(node))
+        )
     }
 
     /// Iterate over all nodes in this tree, in no particular order
-    pub fn unordered_iter(&self) -> impl Iterator<Item = &T> + '_ {
+    pub fn unordered_iter(&self) -> impl Iterator<Item = NodeRef<'_, T>> + '_ {
         self.nodes
             .iter()
             .map(|(_, item)| {
-                item.val()
+                NodeRef::new(self, item)
             })
     }
 
     /// Iterate over all nodes in this tree mutably, in no particular order
-    pub fn unordered_iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+    pub fn unordered_iter_mut(&mut self) -> impl Iterator<Item = NodeMutLimited<'_, T>> + '_ {
         self.nodes
             .iter_mut()
-            .map(|(_, item)| item.val_mut())
+            .map(|(_, item)| {
+                NodeMutLimited::new(item)
+            })
     }
 
     /// Iterator over the keys of all nodes in this tree, in no particular order
@@ -130,24 +148,25 @@ impl<T> Tree<T> {
     /// Iterate over the roots of this tree.
     ///
     /// A root is any node that has no parent
-    pub fn roots(&self) -> impl Iterator<Item = &T> + '_ {
+    pub fn roots(&self) -> impl Iterator<Item = NodeRef<'_, T>> + '_ {
         self.roots
             .iter()
             .map(|key| {
-                self.nodes.get(*key).unwrap().val()
+                NodeRef::new(self, self.nodes.get(*key).unwrap())
             })
     }
 
     /// Iterator over the roots of this tree mutable
     ///
     /// A root is any node that has no parent
-    pub fn roots_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+    pub fn roots_mut(&mut self) -> impl Iterator<Item = NodeMutLimited<'_, T>> + '_ {
         self.roots
             .iter()
             .map(|key| {
-                let node_val = self.nodes.get_mut(*key).unwrap().val_mut();
+                let node = self.nodes.get_mut(*key).unwrap();
                 // SAFETY: We guarantee items in `roots` are unique
-                unsafe { &mut *(node_val as *mut T) }
+                let node = unsafe { &mut *(node as *mut Node<T>) };
+                NodeMutLimited::new(node)
             })
     }
 
