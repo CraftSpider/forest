@@ -102,17 +102,17 @@ macro_rules! impl_traverse_mut {
                 self.tree_mut().try_get_mut(child)
             }
 
-            pub fn traverse_children_mut(
-                &mut self
-            ) -> impl Iterator<Item = NodeMutLimited<'_, T>> + '_ {
-                self.children()
-                    .to_owned()
-                    .into_iter()
-                    .map(move |key| {
-                        let node = self.tree_mut().try_get_mut(key).unwrap().downgrade();
-                        core::mem::transmute::<NodeMutLimited<'_, T>, NodeMutLimited<'_, T>>(node)
-                    })
-            }
+            // pub fn traverse_children_mut(
+            //     &mut self
+            // ) -> impl Iterator<Item = NodeMutLimited<'_, T>> + '_ {
+            //     self.children()
+            //         .to_owned()
+            //         .into_iter()
+            //         .map(move |key| {
+            //             let node = self.tree_mut().try_get_mut(key).unwrap().downgrade();
+            //             core::mem::transmute::<NodeMutLimited<'_, T>, NodeMutLimited<'_, T>>(node)
+            //         })
+            // }
         }
     }
 }
