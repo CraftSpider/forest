@@ -9,11 +9,11 @@ A holding place for tree implementations
 
 Pros:
 - Is easily `Send`/`Sync`
-- No extra allocation costs
+- No extra allocation or synchronization costs
 
 Cons:
 - Can only borrow nodes mutably *or* immutably
-- Can't traverse the tree from a node borrow
+- Can only traverse the tree from certain borrows
 
 ### object_tree::Tree
 
@@ -23,5 +23,5 @@ Pros:
 
 Cons:
 - Not `Send`/`Sync` without the `atomic` feature
-- Have to pay extra allocation costs
+- Have to pay extra allocation and synchronization costs
 

@@ -159,6 +159,7 @@ impl<'a, T> NodeMut<'a, T> {
         }
     }
 
+    #[allow(unused)]
     fn downgrade(mut self) -> NodeMutLimited<'a, T> {
         let r = self.node_mut();
         let r = unsafe { &mut *(r as *mut Node<T>) };

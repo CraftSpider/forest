@@ -91,7 +91,7 @@ impl<T: ?Sized> Tree<T> {
 
     /// Set the first node as the parent of the second node,
     /// unsetting the current parent if there is one
-    pub fn set_child(&self, parent: TreeKey, child: TreeKey) {
+    pub fn set_child(&self, parent: TreeKey, child: TreeKey) -> Option<()> {
         let mut relations = self.relations.borrow_mut();
 
         let old_parent = relations.parents.get(child);
@@ -107,10 +107,10 @@ impl<T: ?Sized> Tree<T> {
             .insert(child, parent);
         relations
             .children
-            .entry(parent)
-            .unwrap()
+            .entry(parent)?
             .or_default()
             .push(child);
+        Some(())
     }
 
     /// Remove the second node as a child of the first node
@@ -248,7 +248,7 @@ impl<T> Tree<T> {
     }
 
     /// Create a new child of a node from the provided value
-    pub fn add_child(&self, item: T, parent: TreeKey) -> TreeKey {
+    pub fn add_child(&self, item: T, parent: TreeKey) -> Result<TreeKey> {
         let cell = Stable::new(item);
 
         let new_key = self.nodes.borrow_mut().insert(cell);
@@ -258,7 +258,7 @@ impl<T> Tree<T> {
         relations
             .children
             .entry(parent)
-            .unwrap()
+            .ok_or(Error::Missing)?
             .or_default()
             .push(new_key);
 
@@ -266,7 +266,7 @@ impl<T> Tree<T> {
             .parents
             .insert(new_key, parent);
 
-        new_key
+        Ok(new_key)
     }
 }
 

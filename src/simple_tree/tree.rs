@@ -151,8 +151,8 @@ impl<T> Tree<T> {
     pub fn roots(&self) -> impl Iterator<Item = NodeRef<'_, T>> + '_ {
         self.roots
             .iter()
-            .map(|key| {
-                NodeRef::new(self, self.nodes.get(*key).unwrap())
+            .filter_map(|key| {
+                Some(NodeRef::new(self, self.nodes.get(*key)?))
             })
     }
 
@@ -162,11 +162,11 @@ impl<T> Tree<T> {
     pub fn roots_mut(&mut self) -> impl Iterator<Item = NodeMutLimited<'_, T>> + '_ {
         self.roots
             .iter()
-            .map(|key| {
-                let node = self.nodes.get_mut(*key).unwrap();
+            .filter_map(|key| {
+                let node = self.nodes.get_mut(*key)?;
                 // SAFETY: We guarantee items in `roots` are unique
                 let node = unsafe { &mut *(node as *mut Node<T>) };
-                NodeMutLimited::new(node)
+                Some(NodeMutLimited::new(node))
             })
     }
 

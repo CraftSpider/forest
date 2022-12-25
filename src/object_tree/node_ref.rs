@@ -176,7 +176,7 @@ impl<'a, 'b, T: ?Sized> NodeRefMut<'a, 'b, T> {
 impl<T> NodeRefMut<'_, '_, T> {
     /// Create a new child of this node from the provided value
     pub fn new_child(&mut self, child: T) {
-        self.tree.add_child(child, self.key());
+        let _ = self.tree.add_child(child, self.key());
     }
 }
 
