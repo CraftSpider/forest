@@ -7,7 +7,6 @@
 //! |-------------|--------|
 //! | Adding Node | `O(1)` |
 //!
-
 //! Implementation of a nicely traversable tree that supports mutable references to multiple
 //! nodes concurrently
 

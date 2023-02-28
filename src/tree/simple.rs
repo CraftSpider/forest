@@ -1,3 +1,5 @@
+//! A simple one-to-many tree. Every node can have child data.
+
 mod tree;
 mod node;
 mod node_ref;
@@ -19,7 +21,7 @@ mod tests {
         let child2 = tree.add_child(2, child1)
             .unwrap();
 
-        let r1 = tree.try_get(child2)
+        let r1 = tree.get(child2)
             .unwrap();
         assert_eq!(*r1, 2);
         let r2 = r1.traverse_parent()
@@ -42,7 +44,7 @@ mod tests {
         let child2 = tree.add_child(2, child1)
             .unwrap();
 
-        let mut r1 = tree.try_get_mut(child2)
+        let mut r1 = tree.get_mut(child2)
             .unwrap();
         assert_eq!(*r1, 2);
         let mut r2 = r1.traverse_parent_mut()

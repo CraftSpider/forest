@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::borrow::{Borrow, BorrowMut};
-use crate::simple_tree::{Node, Tree, TreeKey};
+use crate::tree::simple::{Node, Tree, TreeKey};
 
 macro_rules! impl_common {
     ($ty:ident) => {

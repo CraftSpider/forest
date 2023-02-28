@@ -1,4 +1,28 @@
 use core::num::{NonZeroU64, NonZeroUsize, NonZeroIsize};
+use std::mem::MaybeUninit;
+
+pub trait MaybeUninitArray<T, const N: usize>: Sized {
+    const UNINIT: [Self; N];
+}
+
+pub trait MaybeUninitSlice<T>: Sized {
+    unsafe fn assume_init_ref(val: &[Self]) -> &[T];
+    unsafe fn assume_init_mut(val: &mut [Self]) -> &mut [T];
+}
+
+impl<T, const N: usize> MaybeUninitArray<T, N> for MaybeUninit<T> {
+    const UNINIT: [Self; N] = unsafe { MaybeUninit::uninit().assume_init() };
+}
+
+impl<T> MaybeUninitSlice<T> for MaybeUninit<T> {
+    unsafe fn assume_init_ref(val: &[Self]) -> &[T] {
+        unsafe { &*(val as *const [Self] as *const [T]) }
+    }
+
+    unsafe fn assume_init_mut(val: &mut [Self]) -> &mut [T] {
+        unsafe { &mut *(val as *mut [Self] as *mut [T]) }
+    }
+}
 
 pub trait NonZeroExt: Sized {
     type Inner;

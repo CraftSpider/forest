@@ -1,5 +1,6 @@
-use std::ops::{Deref, DerefMut};
-use crate::simple_tree::TreeKey;
+use core::ops::{Deref, DerefMut};
+use alloc::vec::Vec;
+use crate::tree::simple::TreeKey;
 
 pub struct Node<T: ?Sized> {
     parent: Option<TreeKey>,

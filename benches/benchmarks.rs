@@ -8,6 +8,7 @@ fn criterion() -> Criterion {
 }
 
 mod object_tree;
+mod simple_tree;
 mod stable;
 
-criterion_main!(object_tree::object_tree, stable::cell);
+criterion_main!(object_tree::object_tree, simple_tree::simple_tree, stable::cell);

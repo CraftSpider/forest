@@ -7,7 +7,7 @@ use core::fmt;
 use core::marker::Unsize;
 use alloc::vec::Vec;
 use slotmap::{new_key_type, SlotMap, SecondaryMap};
-use crate::object_tree::{Stable, Cell};
+use crate::tree::object::{Stable, Cell};
 
 struct Relations {
     parents: SecondaryMap<TreeKey, TreeKey>,

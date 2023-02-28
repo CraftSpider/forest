@@ -8,7 +8,7 @@ use core::borrow::{Borrow, BorrowMut};
 #[cfg(feature = "unstable")]
 use core::marker::Unsize;
 use alloc::vec::Vec;
-use crate::object_tree::{Error, Stable, StableRef, StableMut};
+use crate::tree::object::{Error, Stable, StableRef, StableMut};
 
 macro_rules! ref_common {
     ($ty:ty) => {

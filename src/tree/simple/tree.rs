@@ -1,8 +1,8 @@
 
 use slotmap::{new_key_type, SlotMap};
 use alloc::vec::Vec;
-use std::ptr::NonNull;
-use crate::simple_tree::{Node, NodeMut, NodeMutLimited, NodeRef};
+use core::ptr::NonNull;
+use crate::tree::simple::{Node, NodeMut, NodeMutLimited, NodeRef};
 
 new_key_type! {
     /// Key for a node in a tree. Altering the tree will not invalidate the key, as long
@@ -10,12 +10,19 @@ new_key_type! {
     pub struct TreeKey;
 }
 
+/// A simple one-to-many tree implementation, relatively performant and with no particular special
+/// characteristics. Multiple root nodes are supported.
+///
+/// Traversing the tree, mutable access can be transferred from one node to parent or child nodes
+/// if the node was derived from an operation that prevents multiple mutable nodes being created
+/// at once.
 pub struct Tree<T> {
     nodes: SlotMap<TreeKey, Node<T>>,
     roots: Vec<TreeKey>,
 }
 
 impl<T> Tree<T> {
+    /// Create a new tree
     pub fn new() -> Tree<T> {
         Tree::default()
     }
@@ -38,12 +45,14 @@ impl<T> Tree<T> {
         self.nodes.is_empty()
     }
 
+    /// Add a new root node to this tree
     pub fn add_root(&mut self, val: T) -> TreeKey {
         let new_root = self.nodes.insert(Node::new(val, None));
         self.roots.push(new_root);
         new_root
     }
 
+    /// Add a new child node to the referenced parent
     pub fn add_child(&mut self, val: T, parent: TreeKey) -> Option<TreeKey> {
         if !self.nodes.contains_key(parent) {
             return None;
@@ -101,20 +110,24 @@ impl<T> Tree<T> {
         Some(())
     }
 
-    /// Try to get an immutable reference to a node identified by the provided key
-    pub fn try_get(&self, key: TreeKey) -> Option<NodeRef<'_, T>> {
+    /// Get an immutable reference to a node identified by the provided key, returning `None` if
+    /// the node doesn't exist.
+    pub fn get(&self, key: TreeKey) -> Option<NodeRef<'_, T>> {
         Some(NodeRef::new(self, self.nodes.get(key)?))
     }
 
-    /// Try to get a mutable reference to a node identified by the provided key
-    pub fn try_get_mut(&mut self, key: TreeKey) -> Option<NodeMut<'_, T>> {
+    /// Get a mutable reference to a node identified by the provided key, returning `None` if the
+    /// node doesn't exist
+    pub fn get_mut(&mut self, key: TreeKey) -> Option<NodeMut<'_, T>> {
         let this_ptr = unsafe { NonNull::new_unchecked(self) };
         let node = NonNull::from(self.nodes.get_mut(key)?);
 
         Some(NodeMut::new(this_ptr, node, key))
     }
 
-    pub fn try_get_many_mut<const N: usize>(&mut self, keys: [TreeKey; N]) -> Option<[NodeMutLimited<'_, T>; N]> {
+    /// Get a mutable reference to many nodes at once, returning `None` if any nodes don't exist or
+    /// any keys in the input are repeated.
+    pub fn get_many_mut<const N: usize>(&mut self, keys: [TreeKey; N]) -> Option<[NodeMutLimited<'_, T>; N]> {
         Some(
             self.nodes
                 .get_disjoint_mut(keys)?

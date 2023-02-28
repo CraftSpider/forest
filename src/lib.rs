@@ -1,12 +1,11 @@
-//! Handy data structures, particularly trees and occasionally graphs
+//! Handy data structures, particularly trees and occasionally other things
 
 #![cfg_attr(feature = "unstable", feature(unsize, coerce_unsized))]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(never_type)]
 
 #![deny(clippy::all)]
 #![deny(
-    // missing_docs,
+    missing_docs,
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
     missing_abi,
@@ -26,7 +25,7 @@
 
 extern crate alloc;
 
-pub mod simple_tree;
-pub mod object_tree;
+pub mod tree;
+pub mod list;
 pub mod stable;
 pub(crate) mod util;
